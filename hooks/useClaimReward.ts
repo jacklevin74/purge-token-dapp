@@ -9,8 +9,7 @@ import {
   PURGE_PROGRAM_ID, 
   PURGE_TOKEN_MINT,
   GLOBAL_STATE_SEED, 
-  USER_MINT_SEED,
-  MINT_AUTHORITY_SEED 
+  USER_MINT_SEED
 } from '@/lib/constants';
 
 export interface ClaimRewardResult {
@@ -74,11 +73,6 @@ export function useClaimReward(): UseClaimRewardReturn {
           PURGE_PROGRAM_ID
         );
 
-        const [mintAuthority] = web3.PublicKey.findProgramAddressSync(
-          [Buffer.from(MINT_AUTHORITY_SEED)],
-          PURGE_PROGRAM_ID
-        );
-
         // Get user's token account
         const userTokenAccount = await getAssociatedTokenAddress(
           PURGE_TOKEN_MINT,
@@ -97,7 +91,6 @@ export function useClaimReward(): UseClaimRewardReturn {
             userMint,
             globalState,
             mint: PURGE_TOKEN_MINT,
-            mintAuthority,
             userTokenAccount,
             user: publicKey,
             systemProgram: web3.SystemProgram.programId,
