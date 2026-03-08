@@ -289,11 +289,11 @@ export const ClaimRank: FC = () => {
           )}
         </div>
 
-        {/* Slots per Transaction */}
+        {/* Mints per Transaction */}
         <div>
           <div className="flex justify-between items-center mb-3">
-            <label className="text-xs font-bold tracking-widest text-[#888] uppercase">Slots per Tx</label>
-            <span className="text-[#00FFAA] font-black text-lg">{slotsPerTx} <span className="text-sm font-normal text-[#555]">slot{slotsPerTx > 1 ? 's' : ''} / signature</span></span>
+            <label className="text-xs font-bold tracking-widest text-[#888] uppercase">Mints per Tx</label>
+            <span className="text-[#00FFAA] font-black text-lg">{slotsPerTx} <span className="text-sm font-normal text-[#555]">mint{slotsPerTx > 1 ? 's' : ''} / signature</span></span>
           </div>
           <input
             type="range" min={1} max={6} value={slotsPerTx}
@@ -302,10 +302,10 @@ export const ClaimRank: FC = () => {
             disabled={loading}
           />
           <div className="flex justify-between text-xs text-[#444] mt-1">
-            <span>1 slot</span><span>3 slots</span><span>6 slots</span>
+            <span>1 mint</span><span>3 mints</span><span>6 mints</span>
           </div>
           <div className="text-xs text-[#444] mt-1">
-            Slots bundled per wallet signature. Higher = fewer approvals. Max ~6 per tx.
+            Mints bundled per wallet signature. Higher = fewer approvals. Max ~6 per tx.
           </div>
         </div>
 
@@ -445,7 +445,7 @@ export const ClaimRank: FC = () => {
       <div className="mt-6 bg-[#111] border border-[#1a1a1a] rounded p-4 text-xs text-[#444] space-y-1">
         <div className="text-[#555] font-bold mb-2 uppercase tracking-widest">How it works</div>
         <div>• Choose a term between 1 and 100 days</div>
-        <div>• Use batch mint to claim multiple slots — up to 6 slots per wallet signature (fewer pop-ups)</div>
+        <div>• Use batch mint to claim multiple mints — up to 6 per wallet signature (fewer pop-ups)</div>
         <div>• Reward = AMP × term days (AMP starts at 69, decays by 1 per day, floors at 0)</div>
         <div>• PURGE tokens are claimable after each term expires</div>
         <div>• No pre-mine. No admin keys. Fair launch.</div>
