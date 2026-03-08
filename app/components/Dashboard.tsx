@@ -201,11 +201,7 @@ export const Dashboard: FC = () => {
                 value={userCounter.totalMinted.toString()}
                 sub="total ever minted"
               />
-              <StatCard
-                label="Slots Used"
-                value={`${slotsUsed}`}
-                sub="lifetime slot IDs used"
-              />
+
               <StatCard
                 label="Available"
                 value={`${MAX_MINT_SLOTS - activeCount}`}
