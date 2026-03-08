@@ -1,6 +1,6 @@
 'use client';
 
-import { FC, useState, useCallback, useEffect, useRef } from 'react';
+import { FC, useState, useCallback, useEffect } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import {
@@ -17,9 +17,8 @@ const X1_RPC = 'https://rpc.mainnet.x1.xyz';
 const PURGE_MINT = new PublicKey('ENJrUxHe2tBy3SZp3AHp94Urra1Hs5eNyNWh9hJ8G7a5');
 const MAX_MINT_SLOTS = 2500000;
 
-// AMP starts at 69 on genesis day, decays by 1 per day, floors at 0.
-// reward = AMP × term_days (displayed without 10^18 decimals factor)
 const CURRENT_AMP = 69;
+const SLOTS_PER_TX = 5;
 
 function estimatePurge(days: number, amp: number = CURRENT_AMP): string {
   return (amp * days).toLocaleString();
@@ -69,17 +68,8 @@ function encodeU64LE(val: number): Uint8Array {
   return buf;
 }
 
-const SLOTS_PER_TX = 5;         // claim_rank instructions packed into one transaction (5 accounts each → ~35 acc limit)
-const TXS_PER_WAVE = 10;        // transactions per wave (each covers SLOTS_PER_TX slots)
-const WAVE_GAP_MS = 400;        // ms pause between waves
-
 export const ClaimRank: FC = () => {
-  const { connected, publicKey, sendTransaction, signAllTransactions, wallet } = useWallet();
-
-  // X1 Wallet has a Chrome extension bug: chrome.action.openPopup() is restricted,
-  // so signAllTransactions fails with "not a function". Detect and force sequential mode.
-  const isX1Wallet = wallet?.adapter?.name?.toLowerCase().includes('x1');
-  const canBatchSign = !!signAllTransactions && !isX1Wallet;
+  const { connected, publicKey, sendTransaction } = useWallet();
   const [term, setTerm] = useState(30);
   const [batchCount, setBatchCount] = useState(5);
   const [slotsPerTx, setSlotsPerTx] = useState(SLOTS_PER_TX);
@@ -88,12 +78,7 @@ export const ClaimRank: FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [counter, setCounter] = useState<CounterData | null>(null);
   const [checkingCounter, setCheckingCounter] = useState(false);
-  const [waveStats, setWaveStats] = useState<{ sent: number; succeeded: number; failed: number; wave: number; totalWaves: number } | null>(null);
-  const [tps, setTps] = useState<number | null>(null);
-  const [peakTps, setPeakTps] = useState<number>(0);
-  const abortRef = useRef(false);
-  // Rolling TPS: timestamps of recent confirmations (last 5s)
-  const confirmTimestamps = useRef<number[]>([]);
+  const [progress, setProgress] = useState<{ sent: number; succeeded: number; failed: number } | null>(null);
 
   const loadCounter = useCallback(async (pubkey: PublicKey) => {
     setCheckingCounter(true);
@@ -102,7 +87,6 @@ export const ClaimRank: FC = () => {
       const [pda] = getUserCounterPDA(pubkey);
       const info = await conn.getAccountInfo(pda);
       if (info && info.data.length >= 8 + 32 + 8 + 1 + 1 + 1) {
-        // Layout: 8 disc + 32 owner + 8 total_minted + 1 active_count + 1 next_slot + 1 bump
         const data = info.data as Buffer;
         let offset = 8 + 32;
         const totalMinted = Number(data.readBigUInt64LE(offset)); offset += 8;
@@ -124,20 +108,6 @@ export const ClaimRank: FC = () => {
     loadCounter(publicKey);
   }, [publicKey, loadCounter]);
 
-  // TPS ticker: recomputes every 500ms from rolling confirmation timestamps
-  useEffect(() => {
-    if (!loading) return;
-    const interval = setInterval(() => {
-      const now = Date.now();
-      const window = 5000; // 5-second rolling window
-      confirmTimestamps.current = confirmTimestamps.current.filter(t => now - t < window);
-      const currentTps = confirmTimestamps.current.length / (window / 1000);
-      setTps(currentTps);
-      setPeakTps(prev => Math.max(prev, currentTps));
-    }, 500);
-    return () => clearInterval(interval);
-  }, [loading]);
-
   const atLimit = counter !== null && counter.activeCount >= MAX_MINT_SLOTS;
   const slotsRemaining = counter !== null ? MAX_MINT_SLOTS - counter.activeCount : MAX_MINT_SLOTS;
 
@@ -155,18 +125,18 @@ export const ClaimRank: FC = () => {
     for (const slotId of slots) {
       const termBuf = encodeU64LE(term);
       const slotBuf = new Uint8Array(4);
-      new DataView(slotBuf.buffer).setUint32(0, slotId, true); // u32 LE
+      new DataView(slotBuf.buffer).setUint32(0, slotId, true);
       const ixData = Buffer.from(new Uint8Array([...discriminator, ...termBuf, ...slotBuf]));
       const [userMintPDA] = getUserMintPDA(publicKey!, slotId);
 
       tx.add(new TransactionInstruction({
         programId: PROGRAM_ID,
         keys: [
-          { pubkey: counterPDA,                  isSigner: false, isWritable: true },
-          { pubkey: userMintPDA,                 isSigner: false, isWritable: true },
-          { pubkey: globalStatePDA,              isSigner: false, isWritable: true },
-          { pubkey: publicKey!,                  isSigner: true,  isWritable: true },
-          { pubkey: SystemProgram.programId,     isSigner: false, isWritable: false },
+          { pubkey: counterPDA,              isSigner: false, isWritable: true },
+          { pubkey: userMintPDA,             isSigner: false, isWritable: true },
+          { pubkey: globalStatePDA,          isSigner: false, isWritable: true },
+          { pubkey: publicKey!,              isSigner: true,  isWritable: true },
+          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
         ],
         data: ixData,
       }));
@@ -179,11 +149,7 @@ export const ClaimRank: FC = () => {
     setLoading(true);
     setError(null);
     setBatchResults([]);
-    setWaveStats(null);
-    setTps(null);
-    setPeakTps(0);
-    confirmTimestamps.current = [];
-    abortRef.current = false;
+    setProgress(null);
 
     try {
       const conn = new Connection(X1_RPC, 'confirmed');
@@ -211,7 +177,6 @@ export const ClaimRank: FC = () => {
         return;
       }
 
-      // Group slots into transactions (slotsPerTx per tx)
       const txSlotGroups: number[][] = [];
       for (let i = 0; i < actualBatch; i += slotsPerTx) {
         txSlotGroups.push(
@@ -220,112 +185,26 @@ export const ClaimRank: FC = () => {
       }
 
       const allResults: BatchResult[] = [];
+      const sendOpts: SendOptions = { skipPreflight: false, preflightCommitment: 'confirmed' };
 
-      // ── Path A: signAllTransactions (one approval for everything) ──────────
-      if (canBatchSign && txSlotGroups.length > 1) {
-        setWaveStats({ sent: 0, succeeded: 0, failed: 0, wave: 1, totalWaves: 1 });
-
+      for (const slots of txSlotGroups) {
         const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash('confirmed');
-        const txs = txSlotGroups.map(slots =>
-          buildClaimTx(slots, counterPDA, globalStatePDA, discriminator, blockhash)
-        );
-
-        // Single wallet approval for ALL transactions
-        let signedTxs: Transaction[];
+        const tx = buildClaimTx(slots, counterPDA, globalStatePDA, discriminator, blockhash);
         try {
-          signedTxs = await signAllTransactions(txs);
+          const sig = await sendTransaction(tx, conn, sendOpts);
+          await conn.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
+          slots.forEach(slotId => allResults.push({ slot: slotId, success: true, sig }));
         } catch (e: unknown) {
-          throw new Error('Signing cancelled: ' + (e instanceof Error ? e.message : String(e)));
+          const msg = e instanceof Error ? e.message : String(e);
+          slots.forEach(slotId => allResults.push({ slot: slotId, success: false, error: msg }));
         }
 
-        // Submit all signed txs in parallel waves
-        const sendOpts: SendOptions = { skipPreflight: false, preflightCommitment: 'confirmed' };
-        const totalWaves = Math.ceil(signedTxs.length / TXS_PER_WAVE);
-
-        for (let wave = 0; wave < totalWaves; wave++) {
-          if (abortRef.current) break;
-
-          const waveSlice = signedTxs.slice(wave * TXS_PER_WAVE, (wave + 1) * TXS_PER_WAVE);
-          const waveGroups = txSlotGroups.slice(wave * TXS_PER_WAVE, (wave + 1) * TXS_PER_WAVE);
-
-          const wavePromises = waveSlice.map(async (signed, i) => {
-            const slots = waveGroups[i];
-            try {
-              const rawTx = signed.serialize();
-              const sig = await conn.sendRawTransaction(rawTx, sendOpts);
-              await conn.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
-              confirmTimestamps.current.push(Date.now());
-              return slots.map(slotId => ({ slot: slotId, success: true, sig } as BatchResult));
-            } catch (e: unknown) {
-              const msg = e instanceof Error ? e.message : String(e);
-              return slots.map(slotId => ({ slot: slotId, success: false, error: msg } as BatchResult));
-            }
-          });
-
-          const settled = await Promise.allSettled(wavePromises);
-          const waveResults = settled.flatMap((r, i) =>
-            r.status === 'fulfilled' ? r.value :
-            waveGroups[i].map(s => ({ slot: s, success: false, error: String(r.reason) } as BatchResult))
-          );
-
-          allResults.push(...waveResults);
-          setWaveStats({
-            sent: allResults.length,
-            succeeded: allResults.filter(r => r.success).length,
-            failed: allResults.filter(r => !r.success).length,
-            wave: wave + 1,
-            totalWaves,
-          });
-          setBatchResults([...allResults]);
-
-          if (wave < totalWaves - 1 && !abortRef.current) {
-            await new Promise(res => setTimeout(res, WAVE_GAP_MS));
-          }
-        }
-
-      // ── Path B: sendTransaction fallback (one pop-up per tx) ──────────────
-      } else {
-        const totalWaves = Math.ceil(txSlotGroups.length / TXS_PER_WAVE);
-
-        for (let wave = 0; wave < totalWaves; wave++) {
-          if (abortRef.current) break;
-
-          const waveGroups = txSlotGroups.slice(wave * TXS_PER_WAVE, (wave + 1) * TXS_PER_WAVE);
-          const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash('confirmed');
-
-          const wavePromises = waveGroups.map(async (slots) => {
-            const tx = buildClaimTx(slots, counterPDA, globalStatePDA, discriminator, blockhash);
-            try {
-              const sig = await sendTransaction(tx, conn, { skipPreflight: false, preflightCommitment: 'confirmed' });
-              await conn.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
-              confirmTimestamps.current.push(Date.now());
-              return slots.map(slotId => ({ slot: slotId, success: true, sig } as BatchResult));
-            } catch (e: unknown) {
-              const msg = e instanceof Error ? e.message : String(e);
-              return slots.map(slotId => ({ slot: slotId, success: false, error: msg } as BatchResult));
-            }
-          });
-
-          const settled = await Promise.allSettled(wavePromises);
-          const waveResults = settled.flatMap((r, i) =>
-            r.status === 'fulfilled' ? r.value :
-            waveGroups[i].map(s => ({ slot: s, success: false, error: String(r.reason) } as BatchResult))
-          );
-
-          allResults.push(...waveResults);
-          setWaveStats({
-            sent: allResults.length,
-            succeeded: allResults.filter(r => r.success).length,
-            failed: allResults.filter(r => !r.success).length,
-            wave: wave + 1,
-            totalWaves,
-          });
-          setBatchResults([...allResults]);
-
-          if (wave < totalWaves - 1 && !abortRef.current) {
-            await new Promise(res => setTimeout(res, WAVE_GAP_MS));
-          }
-        }
+        setProgress({
+          sent: allResults.length,
+          succeeded: allResults.filter(r => r.success).length,
+          failed: allResults.filter(r => !r.success).length,
+        });
+        setBatchResults([...allResults]);
       }
 
       await loadCounter(publicKey);
@@ -335,10 +214,11 @@ export const ClaimRank: FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [connected, publicKey, sendTransaction, signAllTransactions, canBatchSign, buildClaimTx, term, batchCount, slotsPerTx, loadCounter]);
+  }, [connected, publicKey, sendTransaction, buildClaimTx, term, batchCount, slotsPerTx, loadCounter]);
 
   const maturityDate = new Date(Date.now() + term * 86400000);
   const successCount = batchResults.filter(r => r.success).length;
+  const totalTxs = Math.ceil(batchCount / slotsPerTx);
 
   return (
     <div className="max-w-xl mx-auto px-4 py-10">
@@ -363,7 +243,6 @@ export const ClaimRank: FC = () => {
         </div>
       )}
 
-      {/* Limit Warning */}
       {atLimit && (
         <div className="mb-4 bg-[#1a0000] border border-red-800 text-red-400 rounded px-4 py-3 text-xs font-bold tracking-widest uppercase">
           ⚠ Max Mints Reached (2,500,000/2,500,000) — Claim existing rewards to free slots
@@ -491,76 +370,26 @@ export const ClaimRank: FC = () => {
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="animate-spin inline-block w-4 h-4 border-2 border-black border-t-transparent rounded-full"></span>
-                  {waveStats
-                    ? `Wave ${waveStats.wave}/${waveStats.totalWaves} — ${waveStats.succeeded}/${waveStats.sent} slots confirmed`
-                    : `Preparing ${Math.ceil(batchCount / slotsPerTx)} tx${Math.ceil(batchCount / slotsPerTx) > 1 ? 's' : ''}...`}
+                  {progress
+                    ? `${progress.succeeded}/${progress.sent} confirmed...`
+                    : `Preparing ${totalTxs} tx${totalTxs > 1 ? 's' : ''}...`}
                 </span>
               ) : batchCount > 1
-                ? canBatchSign
-                  ? `⚡ Batch Mint × ${batchCount} slots — 1 approval — ${term} Days`
-                  : `⚡ Batch Mint × ${batchCount} slots — ${Math.ceil(batchCount / slotsPerTx)} approvals — ${term} Days`
+                ? `⚡ Batch Mint × ${batchCount} slots — ${totalTxs} approval${totalTxs > 1 ? 's' : ''} — ${term} Days`
                 : `⚡ Claim Rank — ${term} Days`}
             </button>
-            {!loading && batchCount > 1 && (
-              <div className={`text-center text-xs py-1 ${canBatchSign ? 'text-[#00FFAA]' : 'text-[#555]'}`}>
-                {canBatchSign
-                  ? '✓ Your wallet supports batch signing — one approval for all transactions'
-                  : isX1Wallet
-                    ? '⚠ X1 Wallet: approving one transaction at a time'
-                    : '⚠ Your wallet will prompt once per transaction'}
-              </div>
-            )}
-            {loading && (
-              <button
-                onClick={() => { abortRef.current = true; }}
-                className="w-full py-2 bg-transparent border border-red-800 text-red-400 font-bold text-xs tracking-widest rounded hover:bg-[#1a0000] uppercase"
-              >
-                ✕ Abort After Current Wave
-              </button>
-            )}
-            {loading && waveStats && (
+            {loading && progress && (
               <div className="w-full bg-[#0d0d0d] border border-[#1a1a1a] rounded h-2 overflow-hidden">
                 <div
                   className="h-full bg-[#00FFAA] transition-all duration-300"
-                  style={{ width: `${(waveStats.sent / batchCount) * 100}%` }}
+                  style={{ width: `${(progress.sent / batchCount) * 100}%` }}
                 />
               </div>
             )}
           </div>
         )}
 
-        {/* TPS Gauge */}
-        {(loading || (tps !== null && batchResults.length > 0)) && (
-          <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-lg p-4">
-            <div className="text-xs text-[#555] uppercase tracking-widest font-bold mb-3">Live TPS</div>
-            <div className="flex items-end gap-6">
-              <div className="text-center">
-                <div className="text-3xl font-black text-[#00FFAA] tabular-nums">
-                  {tps !== null ? tps.toFixed(1) : '—'}
-                </div>
-                <div className="text-xs text-[#555] mt-1">confirmed / sec</div>
-              </div>
-              <div className="text-center">
-                <div className="text-3xl font-black text-white tabular-nums">
-                  {peakTps > 0 ? peakTps.toFixed(1) : '—'}
-                </div>
-                <div className="text-xs text-[#555] mt-1">peak TPS</div>
-              </div>
-              <div className="flex-1">
-                {/* TPS bar relative to peak */}
-                <div className="w-full bg-[#111] border border-[#222] rounded h-6 overflow-hidden">
-                  <div
-                    className="h-full bg-[#00FFAA] transition-all duration-500"
-                    style={{ width: peakTps > 0 && tps !== null ? `${Math.min((tps / peakTps) * 100, 100)}%` : '0%' }}
-                  />
-                </div>
-                <div className="text-xs text-[#444] mt-1 text-right">5s rolling window</div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Batch Results Grid */}
+        {/* Batch Results */}
         {batchResults.length > 0 && (
           <div className="space-y-2">
             <div className="text-xs text-[#555] uppercase tracking-widest font-bold">
