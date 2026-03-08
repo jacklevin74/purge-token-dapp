@@ -92,6 +92,8 @@ export const ClaimRewards: FC = () => {
   const [mints, setMints] = useState<UserMintData[]>([]);
   const [loading, setLoading] = useState(false);
   const [claiming, setClaiming] = useState<number | null>(null); // slot being claimed
+  const [claimingAll, setClaimingAll] = useState(false);
+  const [claimAllResults, setClaimAllResults] = useState<{ sigs: string[]; failed: number[] } | null>(null);
   const [txSigs, setTxSigs] = useState<Record<number, string>>({});
   const [errors, setErrors] = useState<Record<number, string>>({});
 
@@ -237,6 +239,89 @@ export const ClaimRewards: FC = () => {
     }
   }, [publicKey, sendTransaction, loadData]);
 
+  const handleClaimAll = useCallback(async () => {
+    if (!publicKey || !sendTransaction) return;
+    const matureMints = mints.filter(m => BigInt(Math.floor(Date.now() / 1000)) >= m.maturityTs);
+    if (matureMints.length === 0) return;
+
+    setClaimingAll(true);
+    setClaimAllResults(null);
+
+    try {
+      const conn = new Connection(X1_RPC, 'confirmed');
+      const { getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } = await import('@solana/spl-token');
+      const userTokenAccount = await getAssociatedTokenAddress(PURGE_MINT, publicKey);
+      const [counterPDA] = getUserCounterPDA(publicKey);
+      const [globalStatePDA] = PublicKey.findProgramAddressSync([Buffer.from('global_state')], PROGRAM_ID);
+      const [mintAuthorityPDA] = PublicKey.findProgramAddressSync([Buffer.from('mint_authority')], PROGRAM_ID);
+      const discriminator = await getDiscriminator('global:claim_mint_reward');
+
+      // Create ATA if needed
+      const ataInfo = await conn.getAccountInfo(userTokenAccount);
+      const needsAta = !ataInfo;
+
+      const BATCH_SIZE = 6;
+      const batches: UserMintData[][] = [];
+      for (let i = 0; i < matureMints.length; i += BATCH_SIZE) {
+        batches.push(matureMints.slice(i, i + BATCH_SIZE));
+      }
+
+      const sigs: string[] = [];
+      const failed: number[] = [];
+
+      for (let bi = 0; bi < batches.length; bi++) {
+        const batch = batches[bi];
+        try {
+          const { blockhash } = await conn.getLatestBlockhash('confirmed');
+          const tx = new Transaction();
+          tx.recentBlockhash = blockhash;
+          tx.feePayer = publicKey;
+
+          // Only add ATA ix on first batch
+          if (bi === 0 && needsAta) {
+            tx.add(createAssociatedTokenAccountInstruction(
+              publicKey, userTokenAccount, publicKey, PURGE_MINT,
+              TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID
+            ));
+          }
+
+          for (const mint of batch) {
+            const [userMintPDA] = getUserMintPDA(publicKey, mint.slotId);
+            const slotBuf = encodeU32LE(mint.slotId);
+            const ixData = Buffer.from(new Uint8Array([...discriminator, ...slotBuf]));
+            tx.add(new TransactionInstruction({
+              programId: PROGRAM_ID,
+              keys: [
+                { pubkey: counterPDA,                  isSigner: false, isWritable: true  },
+                { pubkey: userMintPDA,                 isSigner: false, isWritable: true  },
+                { pubkey: globalStatePDA,              isSigner: false, isWritable: true  },
+                { pubkey: PURGE_MINT,                  isSigner: false, isWritable: true  },
+                { pubkey: mintAuthorityPDA,            isSigner: false, isWritable: false },
+                { pubkey: userTokenAccount,            isSigner: false, isWritable: true  },
+                { pubkey: publicKey,                   isSigner: true,  isWritable: true  },
+                { pubkey: SystemProgram.programId,     isSigner: false, isWritable: false },
+                { pubkey: TOKEN_PROGRAM_ID,            isSigner: false, isWritable: false },
+                { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+              ],
+              data: ixData,
+            }));
+          }
+
+          const sig = await sendTransaction(tx, conn, { skipPreflight: false, preflightCommitment: 'confirmed' });
+          await conn.confirmTransaction(sig, 'confirmed');
+          sigs.push(sig);
+        } catch {
+          failed.push(...batch.map(m => m.slotId));
+        }
+      }
+
+      setClaimAllResults({ sigs, failed });
+      await loadData(publicKey);
+    } finally {
+      setClaimingAll(false);
+    }
+  }, [publicKey, sendTransaction, mints, loadData]);
+
   if (!connected) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-16 text-center">
@@ -272,6 +357,42 @@ export const ClaimRewards: FC = () => {
             <div className="text-xs text-[#555] uppercase tracking-widest mb-1">Slots Used</div>
             <div className="text-xl font-black text-white">{counter.nextSlot}<span className="text-sm font-normal text-[#555]">/255</span></div>
           </div>
+        </div>
+      )}
+
+      {/* Claim All button — only shown when mature mints exist */}
+      {!loading && mints.filter(m => BigInt(Math.floor(Date.now() / 1000)) >= m.maturityTs).length > 1 && (
+        <div className="mb-6">
+          <button
+            onClick={handleClaimAll}
+            disabled={claimingAll || claiming !== null}
+            className="w-full py-4 bg-[#00FFAA] text-black font-black text-sm tracking-widest rounded
+              hover:bg-[#00cc88] transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed uppercase"
+          >
+            {claimingAll ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="animate-spin inline-block w-4 h-4 border-2 border-black border-t-transparent rounded-full"></span>
+                Claiming All...
+              </span>
+            ) : `🎯 Claim All (${mints.filter(m => BigInt(Math.floor(Date.now() / 1000)) >= m.maturityTs).length} Mature)`}
+          </button>
+
+          {claimAllResults && (
+            <div className="mt-3 space-y-2">
+              {claimAllResults.sigs.map((sig, i) => (
+                <div key={sig} className="bg-[#001a0d] border border-[#00FFAA33] rounded p-3 text-xs space-y-1">
+                  <div className="text-[#00FFAA] font-bold">✓ Batch {i + 1} claimed</div>
+                  <a href={`https://explorer.mainnet.x1.xyz/tx/${sig}`} target="_blank" rel="noopener noreferrer"
+                    className="font-mono text-[#00FFAA] break-all hover:underline">{sig}</a>
+                </div>
+              ))}
+              {claimAllResults.failed.length > 0 && (
+                <div className="bg-[#1a0000] border border-[#ff000033] rounded p-3 text-xs text-[#ff6666]">
+                  ⚠ Failed slots: {claimAllResults.failed.join(', ')} — try claiming individually
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
