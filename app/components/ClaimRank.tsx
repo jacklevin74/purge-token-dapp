@@ -73,8 +73,9 @@ function encodeU64LE(val: number): Uint8Array {
 export const ClaimRank: FC = () => {
   const { connected, publicKey, sendTransaction } = useWallet();
   const [term, setTerm] = useState(30);
-  const [batchCount, setBatchCount] = useState(5);
   const [slotsPerTx, setSlotsPerTx] = useState(SLOTS_PER_TX);
+  // batchCount is always equal to slotsPerTx — one tx, however many mints they chose
+  const batchCount = slotsPerTx;
   const [loading, setLoading] = useState(false);
   const [batchResults, setBatchResults] = useState<BatchResult[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -263,39 +264,18 @@ export const ClaimRank: FC = () => {
             type="range" min={1} max={100} value={term}
             onChange={(e) => setTerm(Number(e.target.value))}
             className="w-full"
+            disabled={loading}
           />
           <div className="flex justify-between text-xs text-[#444] mt-1">
             <span>1 day</span><span>50 days</span><span>100 days</span>
           </div>
         </div>
 
-        {/* Batch Count */}
-        <div>
-          <div className="flex justify-between items-center mb-3">
-            <label className="text-xs font-bold tracking-widest text-[#888] uppercase">Batch Count</label>
-            <span className="text-[#00FFAA] font-black text-lg">{batchCount} <span className="text-sm font-normal text-[#555]">mint{batchCount > 1 ? 's' : ''}</span></span>
-          </div>
-          <input
-            type="range" min={1} max={2500000} value={batchCount}
-            onChange={(e) => setBatchCount(Number(e.target.value))}
-            className="w-full"
-            disabled={atLimit}
-          />
-          <div className="flex justify-between text-xs text-[#444] mt-1">
-            <span>1</span><span>5</span><span>10</span>
-          </div>
-          {counter !== null && (
-            <div className="text-xs text-[#555] mt-1 text-right">
-              {slotsRemaining} slot{slotsRemaining !== 1 ? 's' : ''} available
-            </div>
-          )}
-        </div>
-
         {/* Mints per Transaction */}
         <div>
           <div className="flex justify-between items-center mb-3">
             <label className="text-xs font-bold tracking-widest text-[#888] uppercase">Mints per Tx</label>
-            <span className="text-[#00FFAA] font-black text-lg">{slotsPerTx} <span className="text-sm font-normal text-[#555]">mint{slotsPerTx > 1 ? 's' : ''} / signature</span></span>
+            <span className="text-[#00FFAA] font-black text-lg">{slotsPerTx} <span className="text-sm font-normal text-[#555]">mint{slotsPerTx > 1 ? 's' : ''}</span></span>
           </div>
           <input
             type="range" min={1} max={6} value={slotsPerTx}
@@ -304,24 +284,28 @@ export const ClaimRank: FC = () => {
             disabled={loading}
           />
           <div className="flex justify-between text-xs text-[#444] mt-1">
-            <span>1 mint</span><span>3 mints</span><span>6 mints</span>
-          </div>
-          <div className="text-xs text-[#444] mt-1">
-            Mints bundled per wallet signature. Higher = fewer approvals. Max ~6 per tx.
+            <span>1</span><span>3</span><span>6</span>
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded p-4 text-center">
+        {/* Stats + Cost */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded p-3 text-center">
             <div className="text-xs text-[#555] uppercase tracking-widest mb-1">AMP</div>
             <div className="text-2xl font-black text-[#00FFAA]">{CURRENT_AMP}</div>
-            <div className="text-xs text-[#444] mt-1">decays 1/day from genesis</div>
+            <div className="text-xs text-[#444] mt-1">decays 1/day</div>
           </div>
-          <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded p-4 text-center">
-            <div className="text-xs text-[#555] uppercase tracking-widest mb-1">Est. PURGE / mint</div>
-            <div className="text-2xl font-black text-white">{estimatePurge(term)}</div>
-            <div className="text-xs text-[#444] mt-1">AMP × days</div>
+          <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded p-3 text-center">
+            <div className="text-xs text-[#555] uppercase tracking-widest mb-1">Est. PURGE</div>
+            <div className="text-xl font-black text-white">{estimatePurge(term)}</div>
+            <div className="text-xs text-[#444] mt-1">per mint</div>
+          </div>
+          <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded p-3 text-center">
+            <div className="text-xs text-[#555] uppercase tracking-widest mb-1">Est. Cost</div>
+            <div className="text-xl font-black text-[#88aaff]">
+              {(slotsPerTx * 0.00203).toFixed(4)}
+            </div>
+            <div className="text-xs text-[#444] mt-1">XNT rent</div>
           </div>
         </div>
 
@@ -376,8 +360,8 @@ export const ClaimRank: FC = () => {
                     ? `${progress.succeeded}/${progress.sent} confirmed...`
                     : `Preparing ${totalTxs} tx${totalTxs > 1 ? 's' : ''}...`}
                 </span>
-              ) : batchCount > 1
-                ? `⚡ Batch Mint × ${batchCount} slots — ${totalTxs} approval${totalTxs > 1 ? 's' : ''} — ${term} Days`
+              ) : slotsPerTx > 1
+                ? `⚡ Mint × ${slotsPerTx} — ${term} Days — 1 Approval`
                 : `⚡ Claim Rank — ${term} Days`}
             </button>
             {loading && progress && (
