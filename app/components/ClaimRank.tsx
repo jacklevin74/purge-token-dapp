@@ -138,7 +138,7 @@ export const ClaimRank: FC = () => {
 
       // Clamp batch to available slots
       const available = MAX_MINT_SLOTS - currentActiveCount;
-      const actualBatch = Math.min(batchCount, available, 10);
+      const actualBatch = Math.min(batchCount, available);
 
       if (actualBatch <= 0) {
         setError('No slots available — claim existing rewards first.');
@@ -257,7 +257,7 @@ export const ClaimRank: FC = () => {
             <span className="text-[#00FFAA] font-black text-lg">{batchCount} <span className="text-sm font-normal text-[#555]">mint{batchCount > 1 ? 's' : ''}</span></span>
           </div>
           <input
-            type="range" min={1} max={10} value={batchCount}
+            type="range" min={1} max={200} value={batchCount}
             onChange={(e) => setBatchCount(Number(e.target.value))}
             className="w-full"
             disabled={atLimit}
@@ -398,7 +398,7 @@ export const ClaimRank: FC = () => {
       <div className="mt-6 bg-[#111] border border-[#1a1a1a] rounded p-4 text-xs text-[#444] space-y-1">
         <div className="text-[#555] font-bold mb-2 uppercase tracking-widest">How it works</div>
         <div>• Choose a term between 1 and 100 days</div>
-        <div>• Use batch mint to fire up to 10 mints at once (max 200 active per wallet)</div>
+        <div>• Use batch mint to fire up to 200 mints at once (max 200 active per wallet)</div>
         <div>• Longer terms earn higher amplifier multipliers</div>
         <div>• PURGE tokens are claimable after each term expires</div>
         <div>• No pre-mine. No admin keys. Fair launch.</div>
