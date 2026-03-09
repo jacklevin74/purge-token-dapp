@@ -13,6 +13,8 @@ interface UserMintData {
   slotId: number;
   owner: string;
   cRank: bigint;
+  amp: bigint;
+  reward: bigint;
   termDays: bigint;
   maturityTs: bigint;
   active: boolean;
@@ -57,11 +59,11 @@ function parseUserMint(data: Buffer, slotId: number): UserMintData {
   const termDays = data.readBigUInt64LE(offset); offset += 8;
   const maturityTs = BigInt(data.readBigInt64LE(offset)); offset += 8;
   const cRank = data.readBigUInt64LE(offset); offset += 8;
-  // skip amp(8) + reward(8)
-  offset += 16;
+  const amp = data.readBigUInt64LE(offset); offset += 8;
+  const reward = data.readBigUInt64LE(offset); offset += 8;
   const claimed = data[offset] === 1;
   const active = !claimed;
-  return { slotId: parsedSlotId, owner, cRank, termDays, maturityTs, active };
+  return { slotId: parsedSlotId, owner, cRank, amp, reward, termDays, maturityTs, active };
 }
 
 function getCountdown(maturityTs: bigint): string {
@@ -350,12 +352,24 @@ export const ClaimRewards: FC = () => {
             <div className="text-xl font-black text-[#00FFAA]">{counter.activeCount}</div>
           </div>
           <div className="bg-[#111] border border-[#1a1a1a] rounded p-3 text-center">
-            <div className="text-xs text-[#555] uppercase tracking-widest mb-1">Lifetime</div>
-            <div className="text-xl font-black text-white">{counter.totalMinted}</div>
+            <div className="text-xs text-[#555] uppercase tracking-widest mb-1">Future Claims</div>
+            <div className="text-xl font-black text-white">
+              {mints
+                .filter(m => BigInt(Math.floor(Date.now() / 1000)) < m.maturityTs)
+                .reduce((sum, m) => sum + Number(m.reward > 0n ? m.reward : m.amp * m.termDays), 0)
+                .toLocaleString()}
+            </div>
+            <div className="text-xs text-[#444] mt-1">PURGE pending</div>
           </div>
           <div className="bg-[#111] border border-[#1a1a1a] rounded p-3 text-center">
-            <div className="text-xs text-[#555] uppercase tracking-widest mb-1">Slots Used</div>
-            <div className="text-xl font-black text-white">{counter.nextSlot}<span className="text-sm font-normal text-[#555]"> used</span></div>
+            <div className="text-xs text-[#555] uppercase tracking-widest mb-1">Matured</div>
+            <div className="text-xl font-black text-[#00FFAA]">
+              {mints
+                .filter(m => BigInt(Math.floor(Date.now() / 1000)) >= m.maturityTs)
+                .reduce((sum, m) => sum + Number(m.reward > 0n ? m.reward : m.amp * m.termDays), 0)
+                .toLocaleString()}
+            </div>
+            <div className="text-xs text-[#444] mt-1">PURGE ready</div>
           </div>
         </div>
       )}
