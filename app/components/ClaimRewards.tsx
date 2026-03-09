@@ -80,8 +80,8 @@ function getCountdown(maturityTs: bigint): string {
   const hours = Math.floor((diff % 86400) / 3600);
   const minutes = Math.ceil((diff % 3600) / 60);
   if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h remaining`;
-  return `${minutes}m remaining`;
+  if (hours >= 1) return `${hours}H REMAINING`;
+  return `${Math.max(1, minutes)}M REMAINING`;
 }
 
 async function getDiscriminator(name: string): Promise<Uint8Array> {
