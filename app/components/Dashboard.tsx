@@ -9,6 +9,42 @@ const PURGE_MINT = new PublicKey('ENJrUxHe2tBy3SZp3AHp94Urra1Hs5eNyNWh9hJ8G7a5')
 const X1_RPC = 'https://rpc.mainnet.x1.xyz';
 const MAX_MINT_SLOTS = 2500000;
 
+// UserMint layout (after 8-byte discriminator):
+// owner: Pubkey (32)
+// slot_index: u32 (4)
+// term_days: u64 (8)
+// mature_ts: i64 (8)
+// claimed: bool (1)   <-- offset 8+32+4+8+8 = 60
+// rank: u64 (8)
+// amp_snapshot: u64 (8)  <-- offset 69
+// reward_amount: u64 (8)
+const USER_MINT_SIZE = 8 + 32 + 4 + 8 + 8 + 1 + 8 + 8 + 8 + 1; // 78 bytes
+const CLAIMED_OFFSET = 8 + 32 + 4 + 8 + 8;       // 60
+const TERM_DAYS_OFFSET = 8 + 32 + 4;              // 44
+const AMP_OFFSET = 8 + 32 + 4 + 8 + 8 + 1 + 8;   // 69
+
+async function fetchTotalUnclaimedPurge(conn: Connection): Promise<bigint> {
+  // Fetch all user_mint accounts where claimed == false (byte at offset 60 is 0)
+  const accounts = await conn.getProgramAccounts(PROGRAM_ID, {
+    filters: [
+      { dataSize: USER_MINT_SIZE },
+      { memcmp: { offset: CLAIMED_OFFSET, bytes: '1' } }, // false = 0x00, base58 '1' = 0x00
+    ],
+  });
+
+  let totalRaw = BigInt(0);
+  for (const { account } of accounts) {
+    const data = account.data as unknown as Buffer;
+    if (data.length < USER_MINT_SIZE) continue;
+    const termDays = data.readBigUInt64LE(TERM_DAYS_OFFSET);
+    const ampSnapshot = data.readBigUInt64LE(AMP_OFFSET);
+    // reward = amp * term * 10^18, but we display in whole PURGE (÷ 10^18)
+    totalRaw += ampSnapshot * termDays;
+  }
+  // totalRaw is in whole PURGE already (amp × term, not yet × 10^18 — that's just for display)
+  return totalRaw;
+}
+
 interface GlobalState {
   totalMinters: bigint;
   activeMints: bigint;
@@ -75,6 +111,7 @@ export const Dashboard: FC = () => {
   const [globalState, setGlobalState] = useState<GlobalState | null>(null);
   const [purgeSupply, setPurgeSupply] = useState<PurgeSupply | null>(null);
   const [userCounter, setUserCounter] = useState<UserCounter | null>(null);
+  const [unclaimedPurge, setUnclaimedPurge] = useState<bigint | null>(null);
   const [loadingGlobal, setLoadingGlobal] = useState(true);
   const [loadingUser, setLoadingUser] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +139,14 @@ export const Dashboard: FC = () => {
           });
         } catch {
           // non-fatal — just leave supply as null
+        }
+
+        // Fetch total unclaimed PURGE (pending rewards across all active mints)
+        try {
+          const unclaimed = await fetchTotalUnclaimedPurge(conn);
+          setUnclaimedPurge(unclaimed);
+        } catch {
+          // non-fatal
         }
       } catch {
         setError('Could not load global state from chain.');
@@ -186,6 +231,12 @@ export const Dashboard: FC = () => {
               : '—'}
             sub="circulating tokens minted"
             accent
+            loading={loadingGlobal}
+          />
+          <StatCard
+            label="Unclaimed PURGE"
+            value={unclaimedPurge !== null ? formatLargeNum(unclaimedPurge) : '—'}
+            sub="pending across all active mints"
             loading={loadingGlobal}
           />
         </div>
