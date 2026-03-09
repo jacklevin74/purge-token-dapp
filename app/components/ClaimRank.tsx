@@ -297,8 +297,8 @@ export const ClaimRank: FC = () => {
           </div>
           <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded p-3 text-center">
             <div className="text-xs text-[#555] uppercase tracking-widest mb-1">Est. PURGE</div>
-            <div className="text-xl font-black text-white">{estimatePurge(term)}</div>
-            <div className="text-xs text-[#444] mt-1">per mint</div>
+            <div className="text-xl font-black text-white">{(CURRENT_AMP * term * slotsPerTx).toLocaleString()}</div>
+            <div className="text-xs text-[#444] mt-1">{slotsPerTx > 1 ? `${slotsPerTx} mints total` : 'per mint'}</div>
           </div>
           <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded p-3 text-center">
             <div className="text-xs text-[#555] uppercase tracking-widest mb-1">Est. Cost</div>
