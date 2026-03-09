@@ -14,7 +14,7 @@ import {
 
 const PROGRAM_ID = new PublicKey('6K6md8GFmT8fncNbWqHSJrduYfG6HgnFCp34jdouGVSM');
 const X1_RPC = 'https://rpc.mainnet.x1.xyz';
-const PURGE_MINT = new PublicKey('ENJrUxHe2tBy3SZp3AHp94Urra1Hs5eNyNWh9hJ8G7a5');
+const PURGE_MINT = new PublicKey('6To4f6r9X3WFsLwWLFdj7ju8BNquzZwupVHUc8oS5pgP');
 const MAX_MINT_SLOTS = 2500000;
 
 const AMP_START = 69;
