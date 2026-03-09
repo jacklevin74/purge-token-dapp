@@ -456,7 +456,7 @@ export const ClaimRewards: FC = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 text-sm mb-4">
+                <div className="grid grid-cols-3 gap-3 text-sm mb-4">
                   <div>
                     <div className="text-xs text-[#555] mb-1">Term</div>
                     <div className="font-mono text-[#888]">{mint.termDays.toString()} days</div>
@@ -465,6 +465,12 @@ export const ClaimRewards: FC = () => {
                     <div className="text-xs text-[#555] mb-1">Matures</div>
                     <div className="font-mono text-[#888]">
                       {maturityDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-[#555] mb-1">PURGE</div>
+                    <div className={`font-mono font-bold ${isMature ? 'text-[#00FFAA]' : 'text-[#888]'}`}>
+                      {formatPurge(Number(mint.reward > 0n ? mint.reward : mint.amp * mint.termDays))}
                     </div>
                   </div>
                 </div>
