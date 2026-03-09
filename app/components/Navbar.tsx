@@ -9,8 +9,8 @@ export const Navbar: FC = () => {
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
         {/* Logo */}
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded bg-[#00FFAA] flex items-center justify-center">
-            <span className="text-black font-black text-sm">P</span>
+          <div className="w-8 h-8 rounded overflow-hidden">
+            <img src="https://ipfs.io/ipfs/bafkreihzr42np7ehilyj3mhvbnhjzk5a5qorakfv75tqxx7yglrzrbla7e" alt="PURGE" className="w-full h-full object-cover" />
           </div>
           <div>
             <span className="text-[#00FFAA] font-black text-lg tracking-widest">PURGE</span>
