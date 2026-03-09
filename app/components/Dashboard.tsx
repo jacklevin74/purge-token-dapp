@@ -9,26 +9,30 @@ const PURGE_MINT = new PublicKey('ENJrUxHe2tBy3SZp3AHp94Urra1Hs5eNyNWh9hJ8G7a5')
 const X1_RPC = 'https://rpc.mainnet.x1.xyz';
 const MAX_MINT_SLOTS = 2500000;
 
-// UserMint layout (after 8-byte discriminator):
-// owner: Pubkey (32)
-// slot_index: u32 (4)
-// term_days: u64 (8)
-// mature_ts: i64 (8)
-// claimed: bool (1)   <-- offset 8+32+4+8+8 = 60
-// rank: u64 (8)
-// amp_snapshot: u64 (8)  <-- offset 69
-// reward_amount: u64 (8)
-const USER_MINT_SIZE = 8 + 32 + 4 + 8 + 8 + 1 + 8 + 8 + 8 + 1; // 78 bytes
-const CLAIMED_OFFSET = 8 + 32 + 4 + 8 + 8;       // 60
-const TERM_DAYS_OFFSET = 8 + 32 + 4;              // 44
-const AMP_OFFSET = 8 + 32 + 4 + 8 + 8 + 1 + 8;   // 69
+// UserMint layout (verified against on-chain data):
+// disc: [u8; 8]         offset 0
+// owner: Pubkey (32)    offset 8
+// slot_index: u32 (4)   offset 40
+// term_days: u64 (8)    offset 44
+// mature_ts: i64 (8)    offset 52
+// rank: u64 (8)         offset 60
+// amp: u64 (8)          offset 68  ← amp stored as actual value (e.g. 68 for AMP 68)
+// reward: u64 (8)       offset 76  ← written at claim time; 0 until claimed
+// claimed: bool (1)     offset 84
+// bump: u8 (1)          offset 85
+// total: 86 bytes
+const USER_MINT_SIZE = 86;
+const CLAIMED_OFFSET = 84;
+const TERM_DAYS_OFFSET = 44;
+const AMP_OFFSET = 68;
+const INITIAL_AMP = BigInt(69); // program caps amp at this
 
 async function fetchTotalUnclaimedPurge(conn: Connection): Promise<bigint> {
-  // Fetch all user_mint accounts where claimed == false (byte at offset 60 is 0)
+  // Fetch all 86-byte user_mint accounts where claimed == false (byte at offset 84 is 0)
   const accounts = await conn.getProgramAccounts(PROGRAM_ID, {
     filters: [
       { dataSize: USER_MINT_SIZE },
-      { memcmp: { offset: CLAIMED_OFFSET, bytes: '1' } }, // false = 0x00, base58 '1' = 0x00
+      { memcmp: { offset: CLAIMED_OFFSET, bytes: '1' } }, // unclaimed = 0x00, base58('1byte of 0x00') = '1'
     ],
   });
 
@@ -37,11 +41,12 @@ async function fetchTotalUnclaimedPurge(conn: Connection): Promise<bigint> {
     const data = account.data as unknown as Buffer;
     if (data.length < USER_MINT_SIZE) continue;
     const termDays = data.readBigUInt64LE(TERM_DAYS_OFFSET);
-    const ampSnapshot = data.readBigUInt64LE(AMP_OFFSET);
-    // reward = amp * term * 10^18, but we display in whole PURGE (÷ 10^18)
-    totalRaw += ampSnapshot * termDays;
+    const ampRaw = data.readBigUInt64LE(AMP_OFFSET);
+    // On-chain reward formula: min(amp, INITIAL_AMP) × term_days
+    const amp = ampRaw > INITIAL_AMP ? INITIAL_AMP : ampRaw;
+    totalRaw += amp * termDays;
   }
-  // totalRaw is in whole PURGE already (amp × term, not yet × 10^18 — that's just for display)
+  // totalRaw is already in whole PURGE (amp × term_days)
   return totalRaw;
 }
 
