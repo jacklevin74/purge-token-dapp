@@ -87,6 +87,18 @@ function getCountdown(maturityTs: bigint): string {
 // Anchor discriminator for claim_mint_reward (computed from Rust source)
 // SHA-256("global:claim_mint_reward")[0..8] = 3f191054743316de
 const CLAIM_MINT_REWARD_DISCRIMINATOR = new Uint8Array([0x3f, 0x19, 0x10, 0x54, 0x74, 0x33, 0x16, 0xde]);
+const INITIAL_AMP = 69n; // program caps amp at this value
+
+function estimateReward(mint: UserMintData): number {
+  // Mirror the on-chain calculate_reward: amp.min(INITIAL_AMP) × term_days × 10^2
+  const amp = mint.amp > INITIAL_AMP ? INITIAL_AMP : mint.amp;
+  return Number(amp * mint.termDays) * 100; // raw units (2 decimals)
+}
+
+function estimateRewardDisplay(mint: UserMintData): number {
+  // Human-readable (divide by 10^2)
+  return estimateReward(mint) / 100;
+}
 
 function encodeU32LE(val: number): Uint8Array {
   const buf = new Uint8Array(4);
@@ -369,7 +381,7 @@ export const ClaimRewards: FC = () => {
             <div className="text-xl font-black text-white">
               {formatPurge(mints
                 .filter(m => BigInt(Math.floor(Date.now() / 1000)) < m.maturityTs)
-                .reduce((sum, m) => sum + Number(m.reward > 0n ? m.reward : m.amp * m.termDays), 0))}
+                .reduce((sum, m) => sum + (m.reward > 0n ? Number(m.reward) / 100 : estimateRewardDisplay(m)), 0))}
             </div>
             <div className="text-xs text-[#444] mt-1">PURGE pending</div>
           </div>
@@ -378,7 +390,7 @@ export const ClaimRewards: FC = () => {
             <div className="text-xl font-black text-[#00FFAA]">
               {formatPurge(mints
                 .filter(m => BigInt(Math.floor(Date.now() / 1000)) >= m.maturityTs)
-                .reduce((sum, m) => sum + Number(m.reward > 0n ? m.reward : m.amp * m.termDays), 0))}
+                .reduce((sum, m) => sum + (m.reward > 0n ? Number(m.reward) / 100 : estimateRewardDisplay(m)), 0))}
             </div>
             <div className="text-xs text-[#444] mt-1">PURGE ready</div>
           </div>
@@ -477,7 +489,7 @@ export const ClaimRewards: FC = () => {
                   <div>
                     <div className="text-xs text-[#555] mb-1">PURGE</div>
                     <div className={`font-mono font-bold ${isMature ? 'text-[#00FFAA]' : 'text-[#888]'}`}>
-                      {formatPurge(Number(mint.reward > 0n ? mint.reward : mint.amp * mint.termDays))}
+                      {mint.reward > 0n ? formatPurge(Number(mint.reward) / 100) : formatPurge(estimateRewardDisplay(mint))}
                     </div>
                   </div>
                 </div>
