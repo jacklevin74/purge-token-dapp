@@ -87,12 +87,13 @@ function getCountdown(maturityTs: bigint): string {
 // Anchor discriminator for claim_mint_reward (computed from Rust source)
 // SHA-256("global:claim_mint_reward")[0..8] = 3f191054743316de
 const CLAIM_MINT_REWARD_DISCRIMINATOR = new Uint8Array([0x3f, 0x19, 0x10, 0x54, 0x74, 0x33, 0x16, 0xde]);
-const INITIAL_AMP = 69n; // program caps amp at this value
+const INITIAL_AMP = 69n; // program caps amp at this value (in real AMP units)
 
 function estimateReward(mint: UserMintData): number {
-  // On-chain formula: min(amp, INITIAL_AMP) × term_days
-  // amp is stored as the actual value (e.g. 68 for AMP 68), not bit-shifted
-  const amp = mint.amp > INITIAL_AMP ? INITIAL_AMP : mint.amp;
+  // amp is stored as amp_real << 8 (e.g. AMP 68 stored as 17408)
+  // On-chain formula: min(amp_real, INITIAL_AMP) × term_days
+  const ampReal = mint.amp >> 8n;
+  const amp = ampReal > INITIAL_AMP ? INITIAL_AMP : ampReal;
   return Number(amp * mint.termDays); // whole PURGE tokens
 }
 

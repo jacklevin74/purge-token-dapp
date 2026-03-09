@@ -42,8 +42,9 @@ async function fetchTotalUnclaimedPurge(conn: Connection): Promise<bigint> {
     if (data.length < USER_MINT_SIZE) continue;
     const termDays = data.readBigUInt64LE(TERM_DAYS_OFFSET);
     const ampRaw = data.readBigUInt64LE(AMP_OFFSET);
-    // On-chain reward formula: min(amp, INITIAL_AMP) × term_days
-    const amp = ampRaw > INITIAL_AMP ? INITIAL_AMP : ampRaw;
+    // amp stored as amp_real << 8; on-chain formula: min(amp_real, INITIAL_AMP) × term_days
+    const ampReal = ampRaw >> BigInt(8);
+    const amp = ampReal > INITIAL_AMP ? INITIAL_AMP : ampReal;
     totalRaw += amp * termDays;
   }
   // totalRaw is already in whole PURGE (amp × term_days)
