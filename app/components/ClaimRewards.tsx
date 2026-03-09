@@ -392,7 +392,7 @@ export const ClaimRewards: FC = () => {
                 <span className="animate-spin inline-block w-4 h-4 border-2 border-black border-t-transparent rounded-full"></span>
                 Claiming All...
               </span>
-            ) : `🎯 Claim All (${mints.filter(m => BigInt(Math.floor(Date.now() / 1000)) >= m.maturityTs).length} Mature)`}
+            ) : `🎯 Batch Claim (${mints.filter(m => BigInt(Math.floor(Date.now() / 1000)) >= m.maturityTs).length} Mature)`}
           </button>
 
           {claimAllResults && (
