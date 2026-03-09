@@ -145,8 +145,14 @@ export const ClaimRewards: FC = () => {
         }
       }
 
-      // Sort by maturity (soonest first)
-      activeMints.sort((a, b) => Number(a.maturityTs - b.maturityTs));
+      // Smart sort: claimable now → maturing soonest → claimed
+      const nowTs = BigInt(Math.floor(Date.now() / 1000));
+      activeMints.sort((a, b) => {
+        const aMature = nowTs >= a.maturityTs;
+        const bMature = nowTs >= b.maturityTs;
+        if (aMature !== bMature) return aMature ? -1 : 1; // claimable first
+        return Number(a.maturityTs - b.maturityTs); // soonest maturity first within group
+      });
       setMints(activeMints);
     } catch {
       setCounter(null);
