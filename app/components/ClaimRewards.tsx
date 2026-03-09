@@ -66,6 +66,12 @@ function parseUserMint(data: Buffer, slotId: number): UserMintData {
   return { slotId: parsedSlotId, owner, cRank, amp, reward, termDays, maturityTs, active };
 }
 
+function formatPurge(amount: number): string {
+  if (amount >= 1_000_000) return (amount / 1_000_000).toFixed(2) + 'M';
+  if (amount >= 1_000) return (amount / 1_000).toFixed(1) + 'K';
+  return amount.toLocaleString();
+}
+
 function getCountdown(maturityTs: bigint): string {
   const now = BigInt(Math.floor(Date.now() / 1000));
   if (maturityTs <= now) return 'Ready to claim';
@@ -354,20 +360,18 @@ export const ClaimRewards: FC = () => {
           <div className="bg-[#111] border border-[#1a1a1a] rounded p-3 text-center">
             <div className="text-xs text-[#555] uppercase tracking-widest mb-1">Future Claims</div>
             <div className="text-xl font-black text-white">
-              {mints
+              {formatPurge(mints
                 .filter(m => BigInt(Math.floor(Date.now() / 1000)) < m.maturityTs)
-                .reduce((sum, m) => sum + Number(m.reward > 0n ? m.reward : m.amp * m.termDays), 0)
-                .toLocaleString()}
+                .reduce((sum, m) => sum + Number(m.reward > 0n ? m.reward : m.amp * m.termDays), 0))}
             </div>
             <div className="text-xs text-[#444] mt-1">PURGE pending</div>
           </div>
           <div className="bg-[#111] border border-[#1a1a1a] rounded p-3 text-center">
             <div className="text-xs text-[#555] uppercase tracking-widest mb-1">Matured</div>
             <div className="text-xl font-black text-[#00FFAA]">
-              {mints
+              {formatPurge(mints
                 .filter(m => BigInt(Math.floor(Date.now() / 1000)) >= m.maturityTs)
-                .reduce((sum, m) => sum + Number(m.reward > 0n ? m.reward : m.amp * m.termDays), 0)
-                .toLocaleString()}
+                .reduce((sum, m) => sum + Number(m.reward > 0n ? m.reward : m.amp * m.termDays), 0))}
             </div>
             <div className="text-xs text-[#444] mt-1">PURGE ready</div>
           </div>
