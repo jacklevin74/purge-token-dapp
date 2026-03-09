@@ -268,8 +268,8 @@ export const ClaimRewards: FC = () => {
 
   const handleClaimAll = useCallback(async () => {
     if (!publicKey || !sendTransaction) return;
-    const matureMints = mints.filter(m => BigInt(Math.floor(Date.now() / 1000)) >= m.maturityTs);
-    if (matureMints.length === 0) return;
+    const candidateMints = mints.filter(m => BigInt(Math.floor(Date.now() / 1000)) >= m.maturityTs);
+    if (candidateMints.length === 0) return;
 
     setClaimingAll(true);
     setClaimAllResults(null);
@@ -283,6 +283,27 @@ export const ClaimRewards: FC = () => {
       const [counterPDA] = getUserCounterPDA(publicKey);
       const [globalStatePDA] = PublicKey.findProgramAddressSync([Buffer.from('global_state')], PROGRAM_ID);
       const [mintAuthorityPDA] = PublicKey.findProgramAddressSync([Buffer.from('mint_authority')], PROGRAM_ID);
+
+      // Re-verify on-chain claimed status for every candidate slot before batching.
+      // This prevents already-claimed slots (e.g. from the old mint) from poisoning
+      // a batch that also contains valid unclaimed slots.
+      const verifiedResults = await Promise.allSettled(
+        candidateMints.map(async (mint) => {
+          const [mintPDA] = getUserMintPDA(publicKey, mint.slotId);
+          const info = await conn.getAccountInfo(mintPDA);
+          if (!info || info.data.length < 86) return null;
+          const parsed = parseUserMint(info.data as Buffer, mint.slotId);
+          return parsed.active ? mint : null; // null = already claimed, skip
+        })
+      );
+      const matureMints = verifiedResults
+        .filter((r): r is PromiseFulfilledResult<UserMintData | null> => r.status === 'fulfilled' && r.value !== null)
+        .map(r => r.value as UserMintData);
+
+      if (matureMints.length === 0) {
+        setClaimAllResults({ sigs: [], failed: [] });
+        return;
+      }
 
       // Create ATA if needed
       const ataInfo = await conn.getAccountInfo(userTokenAccount);
@@ -339,7 +360,39 @@ export const ClaimRewards: FC = () => {
           await conn.confirmTransaction(sig, 'confirmed');
           sigs.push(sig);
         } catch {
-          failed.push(...batch.map(m => m.slotId));
+          // Batch failed — retry each slot individually so one bad slot can't block the rest
+          for (const mint of batch) {
+            try {
+              const { blockhash: bh } = await conn.getLatestBlockhash('confirmed');
+              const soloTx = new Transaction();
+              soloTx.recentBlockhash = bh;
+              soloTx.feePayer = publicKey;
+              const [userMintPDA] = getUserMintPDA(publicKey, mint.slotId);
+              const slotBuf = encodeU32LE(mint.slotId);
+              const ixData = Buffer.from(new Uint8Array([...CLAIM_MINT_REWARD_DISCRIMINATOR, ...slotBuf]));
+              soloTx.add(new TransactionInstruction({
+                programId: PROGRAM_ID,
+                keys: [
+                  { pubkey: counterPDA,                  isSigner: false, isWritable: true  },
+                  { pubkey: userMintPDA,                 isSigner: false, isWritable: true  },
+                  { pubkey: globalStatePDA,              isSigner: false, isWritable: true  },
+                  { pubkey: PURGE_MINT,                  isSigner: false, isWritable: true  },
+                  { pubkey: mintAuthorityPDA,            isSigner: false, isWritable: false },
+                  { pubkey: userTokenAccount,            isSigner: false, isWritable: true  },
+                  { pubkey: publicKey,                   isSigner: true,  isWritable: true  },
+                  { pubkey: SystemProgram.programId,     isSigner: false, isWritable: false },
+                  { pubkey: TOKEN_PROGRAM_ID,            isSigner: false, isWritable: false },
+                  { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+                ],
+                data: ixData,
+              }));
+              const soloSig = await sendTransaction(soloTx, conn, { skipPreflight: false, preflightCommitment: 'confirmed' });
+              await conn.confirmTransaction(soloSig, 'confirmed');
+              sigs.push(soloSig);
+            } catch {
+              failed.push(mint.slotId);
+            }
+          }
         }
       }
 
