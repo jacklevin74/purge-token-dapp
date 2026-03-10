@@ -43,12 +43,23 @@ function getUserMintPDA(userPubkey: PublicKey, slotId: number): [PublicKey, numb
 }
 
 function parseCounter(data: Buffer): CounterData {
-  // UserCounter layout: 8 disc | 32 owner | 8 total_minted (u64) | 1 active_count | 1 next_slot | 1 bump
-  let offset = 8 + 32; // skip discriminator + owner pubkey
-  const totalMinted = Number(data.readBigUInt64LE(offset)); offset += 8;
-  const activeCount = data[offset]; offset += 1;
-  const nextSlot = data[offset];
-  return { totalMinted, activeCount, nextSlot };
+  // Two possible layouts depending on program version:
+  // v1 (17 bytes): 8 disc | 4 next_slot (u32) | 4 active_count (u32) | 1 bump
+  // v2 (41 bytes): 8 disc | 32 owner | 8 total_minted (u64) | 1 active_count | 1 next_slot | 1 bump
+  if (data.length <= 17) {
+    // v1 layout
+    let offset = 8;
+    const nextSlot = data.readUInt32LE(offset); offset += 4;
+    const activeCount = data.readUInt32LE(offset);
+    return { totalMinted: nextSlot, activeCount, nextSlot };
+  } else {
+    // v2 layout
+    let offset = 8 + 32; // skip discriminator + owner pubkey
+    const totalMinted = Number(data.readBigUInt64LE(offset)); offset += 8;
+    const activeCount = data[offset]; offset += 1;
+    const nextSlot = data[offset];
+    return { totalMinted, activeCount, nextSlot };
+  }
 }
 
 function parseUserMint(data: Buffer, slotId: number): UserMintData {
