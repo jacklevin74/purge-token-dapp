@@ -109,8 +109,10 @@ function parseUserMint(data: Buffer, slotId: number): UserMintData {
   // UserMint layout: 8 disc | 32 owner | 4 slot_index (u32) | 8 term_days (u64) |
   //                  8 mature_ts (i64) | 8 rank (u64) | 8 amp (u64) | 8 reward (u64) | 1 claimed | 1 bump
   //
-  // claimed byte is the only reliable indicator — the reward field is pre-populated
-  // on mint and cannot be used to infer claimed status.
+  // Two generations of the program exist on-chain:
+  //   Old program: sets reward field to the minted amount after claiming (claimed byte stays 0)
+  //   New program: sets claimed byte to 1 after claiming (reward field stays 0)
+  // A slot is claimed if EITHER condition is true.
   let offset = 8;
   const owner = new PublicKey(data.slice(offset, offset + 32)).toBase58(); offset += 32;
   const parsedSlotId = data.readUInt32LE(offset); offset += 4;
@@ -119,7 +121,7 @@ function parseUserMint(data: Buffer, slotId: number): UserMintData {
   const cRank = data.readBigUInt64LE(offset); offset += 8;
   const amp = data.readBigUInt64LE(offset); offset += 8;
   const reward = data.readBigUInt64LE(offset); offset += 8;
-  const claimedByte = data[offset] !== 0; // 1 = claimed
+  const claimedByte = data[offset] !== 0; // 1 = claimed; reward field is pre-populated so cannot be used
   const active = !claimedByte;
   return { slotId: parsedSlotId, owner, cRank, amp, reward, termDays, maturityTs, active };
 }
