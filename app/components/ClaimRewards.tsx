@@ -260,10 +260,8 @@ export const ClaimRewards: FC = () => {
 
       const sig = await sendTransaction(tx, conn, { skipPreflight: false, preflightCommitment: 'confirmed' });
       await conn.confirmTransaction(sig, 'confirmed');
-      setTxSigs(prev => ({ ...prev, [slotId]: sig }));
-
-      // Refresh data after claim
-      await loadData(publicKey);
+      // Remove claimed slot from list immediately
+      setMints(prev => prev.filter(m => m.slotId !== slotId));
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       let friendly = msg;
@@ -447,7 +445,7 @@ export const ClaimRewards: FC = () => {
             <div className="text-xl font-black text-white">
               {formatPurge(mints
                 .filter(m => BigInt(Math.floor(Date.now() / 1000)) < m.maturityTs)
-                .reduce((sum, m) => sum + (m.reward > 0n ? Number(m.reward) : estimateRewardDisplay(m)), 0))}
+                .reduce((sum, m) => sum + (m.reward > 0n ? Number(m.reward) / 1_000_000 : estimateRewardDisplay(m)), 0))}
             </div>
             <div className="text-xs text-[#444] mt-1">PURGE pending</div>
           </div>
@@ -456,7 +454,7 @@ export const ClaimRewards: FC = () => {
             <div className="text-xl font-black text-[#00FFAA]">
               {formatPurge(mints
                 .filter(m => BigInt(Math.floor(Date.now() / 1000)) >= m.maturityTs)
-                .reduce((sum, m) => sum + (m.reward > 0n ? Number(m.reward) : estimateRewardDisplay(m)), 0))}
+                .reduce((sum, m) => sum + (m.reward > 0n ? Number(m.reward) / 1_000_000 : estimateRewardDisplay(m)), 0))}
             </div>
             <div className="text-xs text-[#444] mt-1">PURGE ready</div>
           </div>
@@ -555,7 +553,7 @@ export const ClaimRewards: FC = () => {
                   <div>
                     <div className="text-xs text-[#555] mb-1">PURGE</div>
                     <div className={`font-mono font-bold ${isMature ? 'text-[#00FFAA]' : 'text-[#888]'}`}>
-                      {mint.reward > 0n ? formatPurge(Number(mint.reward)) : formatPurge(estimateRewardDisplay(mint))}
+                      {mint.reward > 0n ? formatPurge(Number(mint.reward) / 1_000_000) : formatPurge(estimateRewardDisplay(mint))}
                     </div>
                   </div>
                 </div>
