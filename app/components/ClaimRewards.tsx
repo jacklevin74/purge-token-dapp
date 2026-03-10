@@ -505,8 +505,10 @@ export const ClaimRewards: FC = () => {
 
   // Auto-repeat: after each batch finishes (claimingAll goes false), fire the next one
   // if auto-repeat is still enabled and there are more mature mints waiting.
-  const autoRepeatRef = React.useRef(autoRepeat);
-  useEffect(() => { autoRepeatRef.current = autoRepeat; }, [autoRepeat]);
+  // autoRepeatRef is the single source of truth for auto-repeat logic.
+  // It is set synchronously by: checkbox onChange, and denial in handleClaimAll.
+  // Never sync it from the autoRepeat state — that lags behind by one render.
+  const autoRepeatRef = React.useRef(false);
 
   // Keep a stable ref to handleClaimAll so the effect never needs it as a dep
   const handleClaimAllRef = React.useRef(handleClaimAll);
@@ -599,7 +601,7 @@ export const ClaimRewards: FC = () => {
             <input
               type="checkbox"
               checked={autoRepeat}
-              onChange={e => setAutoRepeat(e.target.checked)}
+              onChange={e => { autoRepeatRef.current = e.target.checked; setAutoRepeat(e.target.checked); }}
               disabled={claimingAll || claiming !== null}
               className="w-4 h-4 accent-[#00FFAA] cursor-pointer"
             />
