@@ -150,7 +150,7 @@ const INITIAL_AMP = 69n; // program caps amp at this value (in real AMP units)
 function estimateReward(mint: UserMintData): number {
   // amp is stored as amp_real << 8 (e.g. AMP 68 stored as 17408)
   // On-chain formula: min(amp_real, INITIAL_AMP) × term_days
-  const ampReal = mint.amp >> 8n;
+  const ampReal = mint.amp; // v2: amp_snapshot stored directly, no bitshift
   const amp = ampReal > INITIAL_AMP ? INITIAL_AMP : ampReal;
   return Number(amp * mint.termDays); // whole PURGE tokens
 }
