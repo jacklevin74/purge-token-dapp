@@ -122,8 +122,8 @@ function parseUserMint(data: Buffer, slotId: number): UserMintData {
   const amp = data.readBigUInt64LE(offset); offset += 8;
   const reward = data.readBigUInt64LE(offset); offset += 8;
   const claimedByte = data[offset] !== 0; // new program sets this to 1
-  const claimedByReward = reward > 0n;    // old program wrote minted amount here instead
-  const active = !claimedByte && !claimedByReward;
+  // Old-program edge cases are handled by LEGACY_CLAIMED_PDAS — reward>0 means a pending reward, not claimed
+  const active = !claimedByte;
   return { slotId: parsedSlotId, owner, cRank, amp, reward, termDays, maturityTs, active };
 }
 
@@ -500,7 +500,7 @@ export const ClaimRewards: FC = () => {
             <div className="text-xs text-[#555] uppercase tracking-widest mb-1">Future Claims</div>
             <div className="text-xl font-black text-white">
               {formatPurge(mints
-                .filter(m => !m.claimed && BigInt(Math.floor(Date.now() / 1000)) < m.maturityTs)
+                .filter(m => BigInt(Math.floor(Date.now() / 1000)) < m.maturityTs)
                 .reduce((sum, m) => sum + (estimateRewardDisplay(m)), 0))}
             </div>
             <div className="text-xs text-[#444] mt-1">PURGE pending</div>
@@ -509,7 +509,7 @@ export const ClaimRewards: FC = () => {
             <div className="text-xs text-[#555] uppercase tracking-widest mb-1">Matured</div>
             <div className="text-xl font-black text-[#00FFAA]">
               {formatPurge(mints
-                .filter(m => !m.claimed && BigInt(Math.floor(Date.now() / 1000)) >= m.maturityTs)
+                .filter(m => BigInt(Math.floor(Date.now() / 1000)) >= m.maturityTs)
                 .reduce((sum, m) => sum + (estimateRewardDisplay(m)), 0))}
             </div>
             <div className="text-xs text-[#444] mt-1">PURGE ready</div>
