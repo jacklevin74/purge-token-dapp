@@ -65,6 +65,11 @@ function parseCounter(data: Buffer): CounterData {
 function parseUserMint(data: Buffer, slotId: number): UserMintData {
   // UserMint layout: 8 disc | 32 owner | 4 slot_index (u32) | 8 term_days (u64) |
   //                  8 mature_ts (i64) | 8 rank (u64) | 8 amp (u64) | 8 reward (u64) | 1 claimed | 1 bump
+  //
+  // IMPORTANT: The program uses the reward field as the claimed marker.
+  // reward == 0  → not yet claimed (reward is computed at claim time, not stored upfront)
+  // reward > 0   → already claimed (the program writes the minted amount here after a successful claim)
+  // The `claimed` byte at offset 84 is never set by the program and should be ignored.
   let offset = 8;
   const owner = new PublicKey(data.slice(offset, offset + 32)).toBase58(); offset += 32;
   const parsedSlotId = data.readUInt32LE(offset); offset += 4;
@@ -73,8 +78,8 @@ function parseUserMint(data: Buffer, slotId: number): UserMintData {
   const cRank = data.readBigUInt64LE(offset); offset += 8;
   const amp = data.readBigUInt64LE(offset); offset += 8;
   const reward = data.readBigUInt64LE(offset); offset += 8;
-  const claimed = data[offset] !== 0;
-  const active = !claimed;
+  // reward > 0 means already claimed; reward == 0 means pending
+  const active = reward === 0n;
   return { slotId: parsedSlotId, owner, cRank, amp, reward, termDays, maturityTs, active };
 }
 
