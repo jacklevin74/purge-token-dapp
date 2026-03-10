@@ -107,22 +107,19 @@ function parseCounter(data: Buffer): CounterData {
 
 function parseUserMint(data: Buffer, slotId: number): UserMintData {
   // UserMint layout: 8 disc | 32 owner | 4 slot_index (u32) | 8 term_days (u64) |
-  //                  8 mature_ts (i64) | 8 rank (u64) | 8 amp (u64) | 8 reward (u64) | 1 claimed | 1 bump
+  // V2 UserMint layout (Anchor serialization):
+  //   8 disc | 32 owner | 4 slot_index | 8 term_days | 8 mature_ts | 1 claimed | 8 rank | 8 amp_snapshot | 8 reward_amount | 1 bump
   //
-  // Two generations of the program exist on-chain:
-  //   Old program: sets reward field to the minted amount after claiming (claimed byte stays 0)
-  //   New program: sets claimed byte to 1 after claiming (reward field stays 0)
-  // A slot is claimed if EITHER condition is true.
+  // claimed comes BEFORE rank/amp/reward in v2 — matches the Rust struct field order exactly.
   let offset = 8;
   const owner = new PublicKey(data.slice(offset, offset + 32)).toBase58(); offset += 32;
   const parsedSlotId = data.readUInt32LE(offset); offset += 4;
   const termDays = data.readBigUInt64LE(offset); offset += 8;
   const maturityTs = BigInt(data.readBigInt64LE(offset)); offset += 8;
+  const claimedByte = data[offset] !== 0; offset += 1; // v2: claimed bool before rank
   const cRank = data.readBigUInt64LE(offset); offset += 8;
   const amp = data.readBigUInt64LE(offset); offset += 8;
   const reward = data.readBigUInt64LE(offset); offset += 8;
-  const claimedByte = data[offset] !== 0; // new program sets this to 1
-  // Old-program edge cases are handled by LEGACY_CLAIMED_PDAS — reward>0 means a pending reward, not claimed
   const active = !claimedByte;
   return { slotId: parsedSlotId, owner, cRank, amp, reward, termDays, maturityTs, active };
 }
