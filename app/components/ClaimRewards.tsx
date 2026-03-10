@@ -174,6 +174,25 @@ export const ClaimRewards: FC = () => {
         })
       );
 
+      // Backfill localStorage from tx history (program bug: claimed flag not set on-chain)
+      // Scan recent txs for 'Slot X claimed:' log lines and persist them locally
+      try {
+        const walletKey = pubkey.toBase58();
+        const txSigs = await conn.getSignaturesForAddress(pubkey, { limit: 100 });
+        const txs = await Promise.allSettled(
+          txSigs.filter(s => !s.err).map(s =>
+            conn.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 })
+          )
+        );
+        for (const r of txs) {
+          if (r.status !== 'fulfilled' || !r.value) continue;
+          for (const log of (r.value.meta?.logMessages || [])) {
+            const m = log.match(/Slot (\d+) claimed:/);
+            if (m) addLocalClaimed(walletKey, parseInt(m[1]));
+          }
+        }
+      } catch { /* non-fatal */ }
+
       // Also filter slots the user has already claimed locally (program bug: claimed flag not set on-chain)
       const localClaimed = getLocalClaimed(pubkey.toBase58());
       const activeMints: UserMintData[] = [];
