@@ -154,21 +154,26 @@ export const ClaimRewards: FC = () => {
         return;
       }
 
-      // Scan all slots 0..nextSlot in parallel
+      // Derive all PDAs upfront, then use getMultipleAccountsInfo in batches of 100
+      // to avoid hammering the RPC with thousands of parallel requests
       const slotRange = Array.from({ length: counterData.nextSlot }, (_, i) => i);
-      const results = await Promise.allSettled(
-        slotRange.map(async (slotId) => {
-          const [mintPDA] = getUserMintPDA(pubkey, slotId);
-          const info = await conn.getAccountInfo(mintPDA);
-          if (!info || info.data.length < 8 + 32 + 4 + 8 + 8 + 8 + 8 + 8 + 1 + 1) return null; // 86 bytes
-          return parseUserMint(info.data as Buffer, slotId);
-        })
-      );
+      const pdas = slotRange.map(slotId => getUserMintPDA(pubkey, slotId)[0]);
 
+      const BATCH_SIZE = 100;
       const activeMints: UserMintData[] = [];
-      for (const result of results) {
-        if (result.status === 'fulfilled' && result.value && result.value.active) {
-          activeMints.push(result.value);
+      for (let i = 0; i < pdas.length; i += BATCH_SIZE) {
+        const batchPdas = pdas.slice(i, i + BATCH_SIZE);
+        const batchSlots = slotRange.slice(i, i + BATCH_SIZE);
+        try {
+          const infos = await conn.getMultipleAccountsInfo(batchPdas, 'confirmed');
+          for (let j = 0; j < infos.length; j++) {
+            const info = infos[j];
+            if (!info || info.data.length < 86) continue;
+            const mint = parseUserMint(info.data as Buffer, batchSlots[j]);
+            if (mint.active) activeMints.push(mint);
+          }
+        } catch {
+          // batch failed — skip it
         }
       }
 
