@@ -595,7 +595,7 @@ export const ClaimRewards: FC = () => {
                 <span className="animate-spin inline-block w-4 h-4 border-2 border-black border-t-transparent rounded-full"></span>
                 Claiming...
               </span>
-            ) : `🎯 Batch Claim`}
+            ) : `🎯 Batch Claim (next 5)`}
           </button>
 
           {/* Auto-repeat toggle */}
