@@ -486,8 +486,10 @@ export const ClaimRewards: FC = () => {
       allSigs = sigs;
       allFailed = failed;
 
-      // If user denied, kill auto-repeat immediately
+      // If user denied, kill auto-repeat immediately — set the ref synchronously
+      // so any already-scheduled setTimeout callback sees it before state update lands
       if (denied) {
+        autoRepeatRef.current = false;
         setAutoRepeat(false);
         setClaimAllResults({ sigs: allSigs, failed: allFailed });
         await loadData(publicKey);
@@ -506,20 +508,23 @@ export const ClaimRewards: FC = () => {
   const autoRepeatRef = React.useRef(autoRepeat);
   useEffect(() => { autoRepeatRef.current = autoRepeat; }, [autoRepeat]);
 
+  // Only re-arm when claimingAll transitions from true → false
+  const prevClaimingAllRef = React.useRef(false);
   useEffect(() => {
-    if (claimingAll) return;
+    const wasRunning = prevClaimingAllRef.current;
+    prevClaimingAllRef.current = claimingAll;
+
+    // Only fire when a batch just finished (true → false transition)
+    if (!wasRunning || claimingAll) return;
     if (!autoRepeatRef.current) return;
     if (!publicKey) return;
-    const matureMints = mints.filter(m => BigInt(Math.floor(Date.now() / 1000)) >= m.maturityTs);
-    if (matureMints.length === 0) {
-      setAutoRepeat(false);
-      return;
-    }
+
     const timer = setTimeout(() => {
+      // Re-check the ref at call time — denial may have cleared it in the interim
       if (autoRepeatRef.current) handleClaimAll();
     }, 1000);
     return () => clearTimeout(timer);
-  }, [claimingAll, mints, publicKey, handleClaimAll]);
+  }, [claimingAll, publicKey, handleClaimAll]);
 
   if (!connected) {
     return (
