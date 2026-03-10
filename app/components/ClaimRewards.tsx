@@ -347,21 +347,27 @@ export const ClaimRewards: FC = () => {
       const [globalStatePDA] = PublicKey.findProgramAddressSync([Buffer.from('global_state')], PROGRAM_ID);
       const [mintAuthorityPDA] = PublicKey.findProgramAddressSync([Buffer.from('mint_authority')], PROGRAM_ID);
 
-      // Re-verify on-chain claimed status for every candidate slot before batching.
-      // This prevents already-claimed slots (e.g. from the old mint) from poisoning
-      // a batch that also contains valid unclaimed slots.
-      const verifiedResults = await Promise.allSettled(
-        candidateMints.map(async (mint) => {
-          const [mintPDA] = getUserMintPDA(publicKey, mint.slotId);
-          const info = await conn.getAccountInfo(mintPDA);
-          if (!info || info.data.length < 86) return null;
-          const parsed = parseUserMint(info.data as Buffer, mint.slotId);
-          return parsed.active ? mint : null;
-        })
-      );
-      const matureMints = verifiedResults
-        .filter((r): r is PromiseFulfilledResult<UserMintData | null> => r.status === 'fulfilled' && r.value !== null)
-        .map(r => r.value as UserMintData);
+      // Re-verify on-chain claimed status using batched getMultipleAccountsInfo (100/batch)
+      // to avoid thundering-herd RPC failures when a user has many mature slots.
+      const matureMints: UserMintData[] = [];
+      const VERIFY_BATCH = 100;
+      for (let i = 0; i < candidateMints.length; i += VERIFY_BATCH) {
+        const batch = candidateMints.slice(i, i + VERIFY_BATCH);
+        const pdas = batch.map(m => getUserMintPDA(publicKey, m.slotId)[0]);
+        try {
+          const infos = await conn.getMultipleAccountsInfo(pdas, 'confirmed');
+          for (let j = 0; j < infos.length; j++) {
+            const info = infos[j];
+            if (!info || info.data.length < 86) continue;
+            const parsed = parseUserMint(info.data as Buffer, batch[j].slotId);
+            if (parsed.active) matureMints.push(batch[j]);
+          }
+        } catch {
+          // RPC batch failed — fall back to including unverified slots from this batch
+          // (the per-tx retry loop will handle any truly-claimed slots gracefully)
+          matureMints.push(...batch);
+        }
+      }
 
       if (matureMints.length === 0) {
         setClaimAllResults({ sigs: [], failed: [] });
