@@ -476,7 +476,7 @@ export const ClaimRewards: FC = () => {
 
   const handleClaimAll = useCallback(async () => {
     if (!publicKey || !sendTransaction) return;
-    const SINGLE_BATCH_LIMIT = 16;
+    const SINGLE_BATCH_LIMIT = 5;
 
     setClaimingAll(true);
     setClaimAllResults(null);
