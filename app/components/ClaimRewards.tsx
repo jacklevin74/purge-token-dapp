@@ -445,7 +445,7 @@ export const ClaimRewards: FC = () => {
             <div className="text-xl font-black text-white">
               {formatPurge(mints
                 .filter(m => BigInt(Math.floor(Date.now() / 1000)) < m.maturityTs)
-                .reduce((sum, m) => sum + (m.reward > 0n ? Number(m.reward) / 1_000_000 : estimateRewardDisplay(m)), 0))}
+                .reduce((sum, m) => sum + (m.reward > 0n ? Number(m.reward) / 100 : estimateRewardDisplay(m)), 0))}
             </div>
             <div className="text-xs text-[#444] mt-1">PURGE pending</div>
           </div>
@@ -454,7 +454,7 @@ export const ClaimRewards: FC = () => {
             <div className="text-xl font-black text-[#00FFAA]">
               {formatPurge(mints
                 .filter(m => BigInt(Math.floor(Date.now() / 1000)) >= m.maturityTs)
-                .reduce((sum, m) => sum + (m.reward > 0n ? Number(m.reward) / 1_000_000 : estimateRewardDisplay(m)), 0))}
+                .reduce((sum, m) => sum + (m.reward > 0n ? Number(m.reward) / 100 : estimateRewardDisplay(m)), 0))}
             </div>
             <div className="text-xs text-[#444] mt-1">PURGE ready</div>
           </div>
@@ -553,7 +553,7 @@ export const ClaimRewards: FC = () => {
                   <div>
                     <div className="text-xs text-[#555] mb-1">PURGE</div>
                     <div className={`font-mono font-bold ${isMature ? 'text-[#00FFAA]' : 'text-[#888]'}`}>
-                      {mint.reward > 0n ? formatPurge(Number(mint.reward) / 1_000_000) : formatPurge(estimateRewardDisplay(mint))}
+                      {mint.reward > 0n ? formatPurge(Number(mint.reward) / 100) : formatPurge(estimateRewardDisplay(mint))}
                     </div>
                   </div>
                 </div>
