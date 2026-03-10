@@ -494,7 +494,7 @@ export const ClaimRewards: FC = () => {
 
   const handleClaimAll = useCallback(async () => {
     if (!publicKey || !sendTransaction) return;
-    const SINGLE_BATCH_LIMIT = 16;
+    const SINGLE_BATCH_LIMIT = 5;
 
     setClaimingAll(true);
     setClaimAllResults(null);
@@ -584,7 +584,7 @@ export const ClaimRewards: FC = () => {
                 <span className="animate-spin inline-block w-4 h-4 border-2 border-black border-t-transparent rounded-full"></span>
                 Claiming...
               </span>
-            ) : `🎯 Batch Claim (next 16)`}
+            ) : `🎯 Batch Claim (next 5)`}
           </button>
 
           {/* Auto-repeat toggle */}
