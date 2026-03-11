@@ -148,9 +148,9 @@ const CLAIM_MINT_REWARD_DISCRIMINATOR = new Uint8Array([0x3f, 0x19, 0x10, 0x54, 
 const INITIAL_AMP = 69n; // program caps amp at this value (in real AMP units)
 
 function estimateReward(mint: UserMintData): number {
-  // amp is stored as amp_real << 8 (e.g. AMP 68 stored as 17408)
-  // On-chain formula: min(amp_real, INITIAL_AMP) × term_days
-  const ampReal = mint.amp; // v2: amp_snapshot stored directly, no bitshift
+  // v2: amp_snapshot stored directly as real value (no bitshift)
+  // On-chain formula: min(amp_snapshot, INITIAL_AMP) × term_days
+  const ampReal = mint.amp;
   const amp = ampReal > INITIAL_AMP ? INITIAL_AMP : ampReal;
   return Number(amp * mint.termDays); // whole PURGE tokens
 }
@@ -313,12 +313,16 @@ export const ClaimRewards: FC = () => {
       tx.add(ix);
 
       const sig = await sendTransaction(tx, conn, { skipPreflight: false, preflightCommitment: 'confirmed' });
-      await conn.confirmTransaction(sig, 'confirmed');
+      const { blockhash: confirmBlockhash, lastValidBlockHeight: confirmLVBH } = await conn.getLatestBlockhash('confirmed');
+      await conn.confirmTransaction({ signature: sig, blockhash: confirmBlockhash, lastValidBlockHeight: confirmLVBH }, 'confirmed');
       setMints(prev => prev.filter(m => m.slotId !== slotId));
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
+      const msgLower = msg.toLowerCase();
       let friendly = msg;
-      if (msg.includes('NotMature') || msg.includes('MaturityNotReached')) {
+      if (msgLower.includes('user rejected') || msgLower.includes('rejected the request') || msgLower.includes('transaction cancelled') || msgLower.includes('cancelled')) {
+        friendly = 'Transaction cancelled.';
+      } else if (msg.includes('NotMature') || msg.includes('MaturityNotReached')) {
         friendly = 'Not yet mature — come back when your term expires.';
       } else if (msg.includes('NoActiveRank')) {
         friendly = 'No active mint found for this slot.';
@@ -431,10 +435,19 @@ export const ClaimRewards: FC = () => {
           }
 
           const sig = await sendTransaction(tx, conn, { skipPreflight: false, preflightCommitment: 'confirmed' });
-          await conn.confirmTransaction(sig, 'confirmed');
+          const { lastValidBlockHeight: batchLVBH } = await conn.getLatestBlockhash('confirmed');
+          await conn.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight: batchLVBH }, 'confirmed');
           sigs.push(sig);
-        } catch {
-          // Batch failed — retry each slot individually so one bad slot can't block the rest
+        } catch (batchErr: unknown) {
+          // If user rejected the transaction, abort the entire batch claim immediately
+          const errMsg = (batchErr instanceof Error ? batchErr.message : String(batchErr)).toLowerCase();
+          if (errMsg.includes('user rejected') || errMsg.includes('rejected') || errMsg.includes('transaction cancelled') || errMsg.includes('cancelled') || errMsg.includes('closed') || errMsg.includes('timeout')) {
+            setClaimAllResults({ sigs, failed });
+            return;
+          }
+          // Small delay before fallback to prevent rapid-fire prompts in X1 Wallet
+          await new Promise(r => setTimeout(r, 500));
+          // Batch failed for other reason — retry each slot individually so one bad slot can't block the rest
           for (const mint of batch) {
             try {
               const { blockhash: bh } = await conn.getLatestBlockhash('confirmed');
@@ -461,9 +474,15 @@ export const ClaimRewards: FC = () => {
                 data: ixData,
               }));
               const soloSig = await sendTransaction(soloTx, conn, { skipPreflight: false, preflightCommitment: 'confirmed' });
-              await conn.confirmTransaction(soloSig, 'confirmed');
+              const { lastValidBlockHeight: soloLVBH } = await conn.getLatestBlockhash('confirmed');
+              await conn.confirmTransaction({ signature: soloSig, blockhash: bh, lastValidBlockHeight: soloLVBH }, 'confirmed');
               sigs.push(soloSig);
-            } catch {
+            } catch (soloErr: unknown) {
+              const soloErrMsg = (soloErr instanceof Error ? soloErr.message : String(soloErr)).toLowerCase();
+              if (soloErrMsg.includes('user rejected') || soloErrMsg.includes('rejected the request') || soloErrMsg.includes('transaction cancelled') || soloErrMsg.includes('cancelled')) {
+                setClaimAllResults({ sigs, failed });
+                return;
+              }
               failed.push(mint.slotId);
             }
           }
@@ -625,7 +644,7 @@ export const ClaimRewards: FC = () => {
                 {isMature && !sig && (
                   <button
                     onClick={() => handleClaimReward(mint)}
-                    disabled={isClaiming || claiming !== null}
+                    disabled={isClaiming || claiming !== null || claimingAll}
                     className="w-full py-3 bg-[#00FFAA] text-black font-black text-sm tracking-widest rounded
                       hover:bg-[#00cc88] transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed uppercase"
                   >
