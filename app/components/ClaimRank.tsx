@@ -236,7 +236,14 @@ export const ClaimRank: FC = () => {
           await conn.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
           slots.forEach(slotId => allResults.push({ slot: slotId, success: true, sig }));
         } catch (e: unknown) {
-          const msg = e instanceof Error ? e.message : String(e);
+          const msg = (e instanceof Error ? e.message : String(e));
+          const msgLower = msg.toLowerCase();
+          // If user rejected, abort the entire batch immediately — no more prompts
+          if (msgLower.includes('user rejected') || msgLower.includes('rejected the request') || msgLower.includes('transaction cancelled') || msgLower.includes('cancelled')) {
+            setBatchResults([...allResults]);
+            setProgress({ sent: allResults.length, succeeded: allResults.filter(r => r.success).length, failed: allResults.filter(r => !r.success).length });
+            return;
+          }
           slots.forEach(slotId => allResults.push({ slot: slotId, success: false, error: msg }));
         }
 
