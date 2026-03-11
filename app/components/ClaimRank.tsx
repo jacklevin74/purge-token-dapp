@@ -239,7 +239,7 @@ export const ClaimRank: FC = () => {
           const msg = (e instanceof Error ? e.message : String(e));
           const msgLower = msg.toLowerCase();
           // If user rejected, abort the entire batch immediately — no more prompts
-          if (msgLower.includes('user rejected') || msgLower.includes('rejected the request') || msgLower.includes('transaction cancelled') || msgLower.includes('cancelled')) {
+          if (msgLower.includes('user rejected') || msgLower.includes('rejected') || msgLower.includes('transaction cancelled') || msgLower.includes('cancelled') || msgLower.includes('closed') || msgLower.includes('timeout')) {
             setBatchResults([...allResults]);
             setProgress({ sent: allResults.length, succeeded: allResults.filter(r => r.success).length, failed: allResults.filter(r => !r.success).length });
             return;
